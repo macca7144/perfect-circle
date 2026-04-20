@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Perfect Circle</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #1a1a1a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      color: #fff;
+      user-select: none;
+      overflow: hidden;
+    }
+
+    #header {
+      height: 44px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 10px;
+    }
+
+    #title {
+      font-size: 12px;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: #444;
+    }
+
+    #challenge-header { display: none; flex-direction: column; align-items: center; gap: 3px; }
+    #shape-label      { font-size: 20px; font-weight: 300; letter-spacing: 3px; color: #bbb; }
+    #progress-text    { font-size: 10px; letter-spacing: 3px; color: #3a3a3a; text-transform: uppercase; }
+
+    #canvas-container { position: relative; }
+    canvas            { cursor: crosshair; display: block; }
+
+    /* Score overlay */
+    #score-overlay {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.35s;
+    }
+    #score-number  { font-size: 68px; font-weight: 300; letter-spacing: -2px; line-height: 1; }
+    #score-sub     { font-size: 10px; letter-spacing: 4px; color: #555; text-transform: uppercase; margin-top: 6px; }
+    #score-msg     { font-size: 11px; color: #484848; letter-spacing: 2px; text-transform: uppercase; margin-top: 9px; }
+
+    /* Timer */
+    #timer-wrap {
+      width: 100%;
+      display: none;
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
+      margin-top: 8px;
+    }
+    #timer-track {
+      flex: 1;
+      height: 2px;
+      background: #222;
+      border-radius: 1px;
+      overflow: hidden;
+    }
+    #timer-bar {
+      height: 100%;
+      width: 100%;
+      background: #555;
+      border-radius: 1px;
+    }
+    #timer-count {
+      font-size: 13px;
+      font-weight: 300;
+      letter-spacing: 1px;
+      color: #555;
+      min-width: 14px;
+      text-align: right;
+    }
+
+    /* Bottom */
+    #bottom {
+      margin-top: 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      min-height: 62px;
+    }
+
+    #instruction {
+      font-size: 11px;
+      color: #333;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+    }
+
+    #mode-buttons { display: flex; gap: 10px; }
+
+    .mode-btn {
+      background: none;
+      border: 1px solid #252525;
+      color: #383838;
+      padding: 6px 16px;
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .mode-btn:hover  { border-color: #444; color: #666; }
+    .mode-btn.active { border-color: #555; color: #888; }
+
+    #retry-btn {
+      display: none;
+      background: none;
+      border: 1px solid #252525;
+      color: #383838;
+      padding: 6px 20px;
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    #retry-btn:hover { border-color: #444; color: #666; }
+
+    /* Final results screen */
+    #results-screen {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #1a1a1a;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+    }
+
+    #results-title {
+      font-size: 10px;
+      letter-spacing: 5px;
+      text-transform: uppercase;
+      color: #383838;
+      margin-bottom: 36px;
+    }
+
+    #results-list {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      margin-bottom: 28px;
+    }
+
+    .result-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      width: 210px;
+    }
+    .result-shape { font-size: 13px; letter-spacing: 2px; color: #555; }
+    .result-pct   { font-size: 28px; font-weight: 300; letter-spacing: -1px; }
+
+    #results-divider { width: 210px; height: 1px; background: #252525; margin-bottom: 22px; }
+
+    #results-total {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      width: 210px;
+      margin-bottom: 44px;
+    }
+    #results-total-label { font-size: 10px; letter-spacing: 3px; color: #3a3a3a; text-transform: uppercase; }
+    #results-total-pct   { font-size: 48px; font-weight: 300; letter-spacing: -2px; }
+
+    #results-retry, #results-home {
+      background: none;
+      border: 1px solid #252525;
+      color: #3a3a3a;
+      padding: 8px 26px;
+      font-size: 10px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    #results-retry:hover, #results-home:hover { border-color: #555; color: #777; }
+
+    #mute-btn {
+      position: fixed;
+      top: 14px; right: 16px;
+      background: none;
+      border: none;
+      color: #333;
+      font-size: 16px;
+      cursor: pointer;
+      padding: 4px;
+      transition: color 0.2s;
+      z-index: 30;
+    }
+    #mute-btn:hover { color: #666; }
+  </style>
+</head>
+<body>
+
+<button id="mute-btn" title="ミュート">🔊</button>
+
+<div id="header">
+  <div id="title">Perfect Circle</div>
+  <div id="challenge-header">
+    <div id="shape-label"></div>
+    <div id="progress-text"></div>
+  </div>
+</div>
+
+<div id="canvas-container">
+  <canvas id="canvas"></canvas>
+  <div id="score-overlay">
+    <div id="score-number"></div>
+    <div id="score-sub">perfect</div>
+    <div id="score-msg"></div>
+  </div>
+</div>
+
+<div id="timer-wrap">
+  <div id="timer-track"><div id="timer-bar"></div></div>
+  <div id="timer-count">5</div>
+</div>
+
+<div id="bottom">
+  <div id="instruction">なぞって</div>
+  <div id="mode-buttons">
+    <button class="mode-btn active" id="btn-free">自由</button>
+    <button class="mode-btn"        id="btn-challenge">チャレンジ</button>
+  </div>
+  <div id="free-result-btns" style="display:none; gap:12px; display:none;">
+    <button class="mode-btn" id="free-retry-btn">もう一度</button>
+    <button class="mode-btn" id="free-challenge-btn">チャレンジへ</button>
+  </div>
+</div>
+
+<div id="results-screen">
+  <div id="results-title">Results</div>
+  <div id="results-list"></div>
+  <div id="results-divider"></div>
+  <div id="results-total">
+    <span id="results-total-label">総合</span>
+    <span id="results-total-pct"></span>
+  </div>
+  <div style="display:flex;gap:12px;">
+    <button id="results-home">ホーム</button>
+    <button id="results-retry">もう一度</button>
+  </div>
+</div>
+
+<script>
+// ── Audio ─────────────────────────────────────────────────────────────────────
+const audio = (() => {
+  let ctx = null, master = null, bgmGain = null;
+  let drawSrc = null, drawGain = null;
+  let muted = false;
+
+  function init() {
+    if (ctx) { ctx.resume(); return; }
+    ctx    = new AudioContext();
+    master = ctx.createGain();
+    master.gain.value = 1;
+    master.connect(ctx.destination);
+    _startBGM();
+  }
+
+  function _startBGM() {
+    bgmGain = ctx.createGain();
+    bgmGain.gain.value = 0.13;
+    bgmGain.connect(master);
+
+    // Chord progression (C - G - Am - F), one chord per bar
+    // Each array: [bass note, then melody arpeggio over the bar]
+    // Frequencies in Hz. Using G major-ish key.
+    const BAR = 1.6; // seconds per bar
+    const NOTE = BAR / 8; // eighth notes
+    const prog = [
+      { bass: 130.8, mel: [523.3, 659.3, 784.0, 659.3, 523.3, 659.3, 784.0, 987.8] }, // C
+      { bass: 98.0,  mel: [493.9, 587.3, 784.0, 587.3, 493.9, 587.3, 784.0, 987.8] }, // G
+      { bass: 110.0, mel: [523.3, 659.3, 880.0, 659.3, 523.3, 659.3, 880.0, 1046.5] }, // Am
+      { bass: 87.3,  mel: [523.3, 698.5, 880.0, 698.5, 523.3, 698.5, 880.0, 1046.5] }, // F
+    ];
+
+    function playMelNote(freq, time, dur) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'square';
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0, time);
+      g.gain.linearRampToValueAtTime(0.09, time + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, time + dur * 0.9);
+      o.connect(g); g.connect(bgmGain);
+      o.start(time); o.stop(time + dur);
+    }
+    function playBassNote(freq, time, dur) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'triangle';
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0, time);
+      g.gain.linearRampToValueAtTime(0.25, time + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, time + dur * 0.95);
+      o.connect(g); g.connect(bgmGain);
+      o.start(time); o.stop(time + dur);
+    }
+
+    function scheduleBar(barIdx, startTime) {
+      const { bass, mel } = prog[barIdx];
+      // Bass: root on beat 1 and 5 (quarter-note pulse)
+      playBassNote(bass, startTime,             NOTE * 2);
+      playBassNote(bass, startTime + NOTE * 4,  NOTE * 2);
+      // Melody: 8 eighth notes
+      mel.forEach((f, i) => playMelNote(f, startTime + i * NOTE, NOTE));
+    }
+
+    let barIdx = 0;
+    let nextBarAt = ctx.currentTime + 0.1;
+    function tick() {
+      // Schedule ahead by up to 2 bars
+      while (nextBarAt < ctx.currentTime + BAR * 1.2) {
+        scheduleBar(barIdx % prog.length, nextBarAt);
+        nextBarAt += BAR;
+        barIdx++;
+      }
+      setTimeout(tick, 200);
+    }
+    tick();
+  }
+
+  function toggle() {
+    if (!ctx) return false;
+    muted = !muted;
+    master.gain.setTargetAtTime(muted ? 0 : 1, ctx.currentTime, 0.1);
+    return muted;
+  }
+
+  function startDraw() {
+    if (!ctx || drawSrc) return;
+    const buf  = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    drawSrc = ctx.createBufferSource();
+    drawSrc.buffer = buf; drawSrc.loop = true;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 3500; bp.Q.value = 2.5;
+    drawGain = ctx.createGain();
+    drawGain.gain.setValueAtTime(0, ctx.currentTime);
+    drawGain.gain.linearRampToValueAtTime(0.022, ctx.currentTime + 0.06);
+    drawSrc.connect(bp); bp.connect(drawGain); drawGain.connect(master);
+    drawSrc.start();
+  }
+
+  function stopDraw() {
+    if (!ctx || !drawSrc) return;
+    const src = drawSrc; drawSrc = null;
+    drawGain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
+    setTimeout(() => { try { src.stop(); src.disconnect(); } catch(e){} }, 300);
+  }
+
+  function playTick(urgent = false) {
+    if (!ctx) return;
+    const osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.connect(g); g.connect(master);
+    osc.type = 'sine'; osc.frequency.value = urgent ? 900 : 660;
+    const t = ctx.currentTime;
+    g.gain.setValueAtTime(urgent ? 0.3 : 0.13, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + (urgent ? 0.07 : 0.12));
+    osc.start(t); osc.stop(t + 0.15);
+  }
+
+  function playScore(pct) {
+    if (!ctx) return;
+    const notes = pct >= 80 ? [523, 659, 784, 1047]
+                : pct >= 50 ? [523, 659, 784]
+                :             [440, 392];
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.connect(g); g.connect(master);
+      osc.type = 'sine'; osc.frequency.value = freq;
+      const t = ctx.currentTime + i * 0.11;
+      g.gain.setValueAtTime(0.17, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+      osc.start(t); osc.stop(t + 0.5);
+    });
+  }
+
+  function playTransition() {
+    if (!ctx) return;
+    const osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.connect(g); g.connect(master);
+    osc.type = 'sine';
+    const t = ctx.currentTime;
+    osc.frequency.setValueAtTime(700, t);
+    osc.frequency.exponentialRampToValueAtTime(220, t + 0.28);
+    g.gain.setValueAtTime(0.12, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    osc.start(t); osc.stop(t + 0.3);
+  }
+
+  function playFanfare(avg) {
+    if (!ctx) return;
+    const melody = avg >= 70
+      ? [523, 0, 659, 0, 784, 0, 1047, 0, 1047]
+      : [392, 370, 330, 0, 294];
+    let t = ctx.currentTime + 0.05;
+    melody.forEach(freq => {
+      if (freq > 0) {
+        const osc = ctx.createOscillator(), g = ctx.createGain();
+        osc.connect(g); g.connect(master);
+        osc.type = 'triangle'; osc.frequency.value = freq;
+        g.gain.setValueAtTime(0.2, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+        osc.start(t); osc.stop(t + 0.4);
+      }
+      t += 0.13;
+    });
+  }
+
+  return { init, toggle, startDraw, stopDraw, playTick, playScore, playTransition, playFanfare,
+           isMuted: () => muted };
+})();
+
+// ── Canvas setup ────────────────────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+const SIZE   = Math.min(window.innerWidth * 0.88, window.innerHeight * 0.58, 520);
+canvas.width = canvas.height = SIZE;
+const CX = SIZE / 2, CY = SIZE / 2, R = SIZE * 0.36;
+
+// ── Shape definitions ───────────────────────────────────────────────────────
+const SHAPES = {
+  circle:   { label: '円',     sides: 0 },
+  triangle: { label: '三角形', sides: 3, startAngle: -Math.PI / 2 },
+  square:   { label: '四角形', sides: 4, startAngle: -Math.PI / 4 },
+  pentagon: { label: '五角形', sides: 5, startAngle: -Math.PI / 2 },
+  diamond:  { label: 'ひし形', sides: 4, startAngle: 0 },
+};
+const SHAPE_KEYS = Object.keys(SHAPES);
+
+function getVertices(key) {
+  const s = SHAPES[key];
+  if (!s.sides) return null;
+  return Array.from({ length: s.sides }, (_, i) => {
+    const a = s.startAngle + (i / s.sides) * Math.PI * 2;
+    return { x: CX + Math.cos(a) * R, y: CY + Math.sin(a) * R };
+  });
+}
+
+// ── Geometry helpers ────────────────────────────────────────────────────────
+function distToSeg(p, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  if (!len2) return Math.hypot(p.x - a.x, p.y - a.y);
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+// Returns { t: 0..1 along perimeter, dist: distance from perimeter }
+function perimParam(p, key) {
+  if (!SHAPES[key].sides) {
+    const angle = Math.atan2(p.y - CY, p.x - CX);
+    return {
+      t:    ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) / (Math.PI * 2),
+      dist: Math.abs(Math.hypot(p.x - CX, p.y - CY) - R),
+    };
+  }
+  const verts = getVertices(key);
+  const n     = verts.length;
+  const lens  = verts.map((v, i) => Math.hypot(verts[(i + 1) % n].x - v.x, verts[(i + 1) % n].y - v.y));
+  const total = lens.reduce((s, l) => s + l, 0);
+  let minD = Infinity, bestT = 0, acc = 0;
+  for (let i = 0; i < n; i++) {
+    const a = verts[i], b = verts[(i + 1) % n];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy;
+    const t  = len2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2)) : 0;
+    const d  = Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+    if (d < minD) { minD = d; bestT = (acc + t * lens[i]) / total; }
+    acc += lens[i];
+  }
+  return { t: bestT, dist: minD };
+}
+
+// ── Scoring ─────────────────────────────────────────────────────────────────
+function scoreShape(pts, key) {
+  if (pts.length < 12) return 0;
+
+  const params  = pts.map(p => perimParam(p, key));
+  const avgDist = params.reduce((s, p) => s + p.dist, 0) / params.length;
+  const distScore = Math.max(0, 1 - avgDist / (R * 0.30));
+
+  // Coverage: 40 buckets along the perimeter
+  const BUCKETS = 40;
+  const covered = new Set();
+  params.forEach(({ t, dist }) => {
+    if (dist < R * 0.38) covered.add(Math.floor(t * BUCKETS) % BUCKETS);
+  });
+  const coverPenalty = Math.max(0, 1 - covered.size / (BUCKETS * 0.88));
+
+  // Closed-loop: start ≈ end
+  const closeDist   = Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y);
+  const closePenalty = Math.min(closeDist / (R * 0.55), 1);
+
+  return Math.max(0, Math.min(1,
+    distScore * (1 - coverPenalty * 0.45) * (1 - closePenalty * 0.22)
+  ));
+}
+
+// ── Drawing ──────────────────────────────────────────────────────────────────
+function drawGrid() {
+  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+  ctx.lineWidth   = 1;
+  const step = SIZE / 8;
+  for (let i = step; i < SIZE; i += step) {
+    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, SIZE); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(SIZE, i); ctx.stroke();
+  }
+}
+
+function drawGuide(key, alpha = 0.14) {
+  ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+  ctx.lineWidth   = 1.5;
+  ctx.setLineDash([6, 9]);
+  ctx.beginPath();
+  if (!SHAPES[key].sides) {
+    ctx.arc(CX, CY, R, 0, Math.PI * 2);
+  } else {
+    const v = getVertices(key);
+    ctx.moveTo(v[0].x, v[0].y);
+    for (let i = 1; i < v.length; i++) ctx.lineTo(v[i].x, v[i].y);
+    ctx.closePath();
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawStroke(pts) {
+  if (pts.length < 2) return;
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth   = 2.5;
+  ctx.lineJoin    = 'round';
+  ctx.lineCap     = 'round';
+  ctx.stroke();
+}
+
+function redraw(guideAlpha) {
+  ctx.clearRect(0, 0, SIZE, SIZE);
+  drawGrid();
+  if (currentKey) drawGuide(currentKey, guideAlpha);
+  drawStroke(points);
+}
+
+// ── UI element refs ──────────────────────────────────────────────────────────
+const el = {
+  title:          document.getElementById('title'),
+  challengeHdr:   document.getElementById('challenge-header'),
+  shapeLabel:     document.getElementById('shape-label'),
+  progressText:   document.getElementById('progress-text'),
+  scoreOverlay:   document.getElementById('score-overlay'),
+  scoreNumber:    document.getElementById('score-number'),
+  scoreMsg:       document.getElementById('score-msg'),
+  timerWrap:      document.getElementById('timer-wrap'),
+  timerBar:       document.getElementById('timer-bar'),
+  timerCount:     document.getElementById('timer-count'),
+  instruction:    document.getElementById('instruction'),
+  modeButtons:    document.getElementById('mode-buttons'),
+  btnFree:        document.getElementById('btn-free'),
+  btnChallenge:   document.getElementById('btn-challenge'),
+  freeResultBtns: document.getElementById('free-result-btns'),
+  resultsScreen:  document.getElementById('results-screen'),
+  resultsList:    document.getElementById('results-list'),
+  resultsTotalPct:document.getElementById('results-total-pct'),
+  resultsRetry:   document.getElementById('results-retry'),
+};
+
+// ── State ────────────────────────────────────────────────────────────────────
+let mode       = 'free';
+let currentKey = 'circle';
+let isDrawing  = false;
+let points     = [];
+let hasResult  = false;
+
+// Challenge
+let cQueue  = [];
+let cIndex  = 0;
+let cScores = [];
+let cTimer  = null;
+let cPhase  = 'idle'; // 'drawing' | 'transitioning'
+const CHALLENGE_TIME = 5000; // ms
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const MESSAGES = [
+  [99, 'Inhuman'], [95, 'Godlike'], [90, 'Amazing'],
+  [80, 'Great'], [70, 'Good'], [60, 'Not bad'],
+  [50, 'Average'], [35, 'Keep trying'], [0, 'Practice more'],
+];
+const getMessage = pct => (MESSAGES.find(([t]) => pct >= t) ?? MESSAGES.at(-1))[1];
+
+function scoreColor(pct) {
+  if (pct >= 90) return '#7fff7f';
+  if (pct >= 70) return '#b8ff7f';
+  if (pct >= 50) return '#fff07f';
+  if (pct >= 30) return '#ffb87f';
+  return '#ff7f7f';
+}
+
+function showScore(pct, msg) {
+  el.scoreNumber.textContent     = pct + '%';
+  el.scoreNumber.style.color     = scoreColor(pct);
+  el.scoreMsg.textContent        = msg;
+  el.scoreOverlay.style.opacity  = '1';
+}
+const hideScore = () => el.scoreOverlay.style.opacity = '0';
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// ── Free mode ────────────────────────────────────────────────────────────────
+function enterFreeMode() {
+  clearTimeout(cTimer);
+  mode       = 'free';
+  cPhase     = 'idle';
+  currentKey = 'circle';
+  isDrawing  = false;
+  points     = [];
+  hasResult  = false;
+
+  el.title.style.display             = '';
+  el.challengeHdr.style.display      = 'none';
+  el.timerWrap.style.display         = 'none';
+  el.instruction.style.display       = '';
+  el.modeButtons.style.display       = '';
+  el.freeResultBtns.style.display    = 'none';
+  el.btnFree.classList.add('active');
+  el.btnChallenge.classList.remove('active');
+  hideScore();
+  redraw();
+}
+
+function endFreeMode() {
+  const pct = Math.round(scoreShape(points, currentKey) * 100);
+  hasResult = true;
+  redraw(0.22);
+  showScore(pct, getMessage(pct));
+  audio.playScore(pct);
+  el.instruction.style.display    = 'none';
+  el.modeButtons.style.display    = 'none';
+  el.freeResultBtns.style.display = 'flex';
+}
+
+// ── Challenge mode ───────────────────────────────────────────────────────────
+function enterChallengeMode() {
+  clearTimeout(cTimer);
+  mode    = 'challenge';
+  cQueue  = shuffle(SHAPE_KEYS).slice(0, 3);
+  cIndex  = 0;
+  cScores = [];
+
+  el.title.style.display        = 'none';
+  el.challengeHdr.style.display = 'flex';
+  el.timerWrap.style.display    = 'flex';
+  el.instruction.style.display  = 'none';
+  el.modeButtons.style.display  = 'none';
+  el.freeResultBtns.style.display = 'none';
+  el.btnFree.classList.remove('active');
+  el.btnChallenge.classList.add('active');
+
+  startTurn();
+}
+
+function startTurn() {
+  clearTimeout(cTimer);
+  isDrawing  = false;
+  points     = [];
+  hasResult  = false;
+  cPhase     = 'drawing';
+  currentKey = cQueue[cIndex];
+
+  el.shapeLabel.textContent  = SHAPES[currentKey].label;
+  el.progressText.textContent = `${cIndex + 1} / 3`;
+
+  hideScore();
+  redraw();
+  startTimer();
+}
+
+function startTimer() {
+  const start = Date.now();
+
+  let lastSec = -1;
+  function tick() {
+    const elapsed  = Date.now() - start;
+    const fraction = Math.max(0, 1 - elapsed / CHALLENGE_TIME);
+    const secs     = Math.ceil(fraction * CHALLENGE_TIME / 1000);
+    el.timerBar.style.width    = (fraction * 100) + '%';
+    el.timerCount.textContent  = secs;
+    if (fraction > 0.5)       { el.timerBar.style.background = '#555'; el.timerCount.style.color = '#555'; }
+    else if (fraction > 0.25) { el.timerBar.style.background = '#9a6622'; el.timerCount.style.color = '#9a6622'; }
+    else                      { el.timerBar.style.background = '#994433'; el.timerCount.style.color = '#994433'; }
+    if (secs !== lastSec && secs > 0 && secs < 5) {
+      audio.playTick(secs <= 2);
+      lastSec = secs;
+    }
+    if (fraction > 0) requestAnimationFrame(tick);
+  }
+  el.timerBar.style.width      = '100%';
+  el.timerBar.style.background = '#555';
+  el.timerCount.textContent    = Math.ceil(CHALLENGE_TIME / 1000);
+  el.timerCount.style.color    = '#555';
+  requestAnimationFrame(tick);
+
+  cTimer = setTimeout(() => {
+    if (cPhase === 'drawing') endTurn();
+  }, CHALLENGE_TIME);
+}
+
+function endTurn() {
+  if (cPhase !== 'drawing') return;
+  cPhase    = 'transitioning';
+  isDrawing = false;
+  clearTimeout(cTimer);
+
+  const pct = Math.round(scoreShape(points, currentKey) * 100);
+  cScores.push(pct);
+
+  redraw(0.22);
+  showScore(pct, getMessage(pct));
+  audio.playScore(pct);
+
+  setTimeout(() => {
+    cIndex++;
+    if (cIndex < 3) { audio.playTransition(); startTurn(); }
+    else            showResults();
+  }, 1500);
+}
+
+function showResults() {
+  const avg = Math.round(cScores.reduce((s, v) => s + v, 0) / cScores.length);
+  el.resultsList.innerHTML = cQueue.map((key, i) => {
+    const pct = cScores[i];
+    return `<div class="result-row">
+      <span class="result-shape">${SHAPES[key].label}</span>
+      <span class="result-pct" style="color:${scoreColor(pct)}">${pct}%</span>
+    </div>`;
+  }).join('');
+  el.resultsTotalPct.textContent = avg + '%';
+  el.resultsTotalPct.style.color = scoreColor(avg);
+  el.resultsScreen.style.display = 'flex';
+  audio.playFanfare(avg);
+}
+
+// ── Input handling ───────────────────────────────────────────────────────────
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const src  = e.touches ? e.touches[0] : e;
+  return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+}
+
+function onStart(e) {
+  if (hasResult && mode === 'free') return;
+  if (cPhase === 'transitioning') return;
+  e.preventDefault();
+  audio.init();
+  audio.startDraw();
+  isDrawing = true;
+  points    = [getPos(e)];
+  redraw();
+}
+
+function onMove(e) {
+  if (!isDrawing) return;
+  e.preventDefault();
+  points.push(getPos(e));
+  redraw();
+}
+
+function onEnd(e) {
+  if (!isDrawing) return;
+  e.preventDefault();
+  isDrawing = false;
+  audio.stopDraw();
+  if (mode === 'free') {
+    if (points.length > 10) endFreeMode();
+  } else if (mode === 'challenge' && cPhase === 'drawing') {
+    if (points.length > 15) endTurn();
+  }
+}
+
+canvas.addEventListener('mousedown',  onStart);
+canvas.addEventListener('mousemove',  onMove);
+canvas.addEventListener('mouseup',    onEnd);
+canvas.addEventListener('mouseleave', e => { if (isDrawing) onEnd(e); });
+canvas.addEventListener('touchstart', onStart, { passive: false });
+canvas.addEventListener('touchmove',  onMove,  { passive: false });
+canvas.addEventListener('touchend',   onEnd,   { passive: false });
+
+// ── Button handlers ──────────────────────────────────────────────────────────
+el.btnFree.addEventListener('click', () => {
+  if (mode !== 'free') enterFreeMode();
+});
+el.btnChallenge.addEventListener('click', () => {
+  enterChallengeMode();
+});
+document.getElementById('free-retry-btn').addEventListener('click', () => {
+  hasResult = false;
+  points    = [];
+  el.freeResultBtns.style.display = 'none';
+  el.instruction.style.display    = '';
+  el.modeButtons.style.display    = '';
+  hideScore();
+  redraw();
+});
+document.getElementById('free-challenge-btn').addEventListener('click', () => {
+  el.freeResultBtns.style.display = 'none';
+  enterChallengeMode();
+});
+el.resultsRetry.addEventListener('click', () => {
+  el.resultsScreen.style.display = 'none';
+  enterChallengeMode();
+});
+document.getElementById('results-home').addEventListener('click', () => {
+  el.resultsScreen.style.display = 'none';
+  enterFreeMode();
+});
+
+// ── Mute button ───────────────────────────────────────────────────────────────
+document.getElementById('mute-btn').addEventListener('click', () => {
+  audio.init();
+  const muted = audio.toggle();
+  document.getElementById('mute-btn').textContent = muted ? '🔇' : '🔊';
+});
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+enterFreeMode();
+</script>
+</body>
+</html>
