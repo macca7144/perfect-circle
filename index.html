@@ -195,9 +195,25 @@
       transition: all 0.2s;
     }
     #results-retry:hover, #results-home:hover { border-color: #555; color: #777; }
+
+    #mute-btn {
+      position: fixed;
+      top: 14px; right: 16px;
+      background: none;
+      border: none;
+      color: #333;
+      font-size: 16px;
+      cursor: pointer;
+      padding: 4px;
+      transition: color 0.2s;
+      z-index: 30;
+    }
+    #mute-btn:hover { color: #666; }
   </style>
 </head>
 <body>
+
+<button id="mute-btn" title="ミュート">🔊</button>
 
 <div id="header">
   <div id="title">Perfect Circle</div>
@@ -227,7 +243,10 @@
     <button class="mode-btn active" id="btn-free">自由</button>
     <button class="mode-btn"        id="btn-challenge">チャレンジ</button>
   </div>
-  <button id="retry-btn">もう一度</button>
+  <div id="free-result-btns" style="display:none; gap:12px; display:none;">
+    <button class="mode-btn" id="free-retry-btn">もう一度</button>
+    <button class="mode-btn" id="free-challenge-btn">チャレンジへ</button>
+  </div>
 </div>
 
 <div id="results-screen">
@@ -245,6 +264,177 @@
 </div>
 
 <script>
+// ── Audio ─────────────────────────────────────────────────────────────────────
+const audio = (() => {
+  let ctx = null, master = null, bgmGain = null;
+  let drawSrc = null, drawGain = null;
+  let muted = false;
+
+  function init() {
+    if (ctx) { ctx.resume(); return; }
+    ctx    = new AudioContext();
+    master = ctx.createGain();
+    master.gain.value = 1;
+    master.connect(ctx.destination);
+    _startBGM();
+  }
+
+  function _startBGM() {
+    bgmGain = ctx.createGain();
+    bgmGain.gain.value = 0.13;
+    bgmGain.connect(master);
+
+    // Chord progression (C - G - Am - F), one chord per bar
+    // Each array: [bass note, then melody arpeggio over the bar]
+    // Frequencies in Hz. Using G major-ish key.
+    const BAR = 1.6; // seconds per bar
+    const NOTE = BAR / 8; // eighth notes
+    const prog = [
+      { bass: 130.8, mel: [523.3, 659.3, 784.0, 659.3, 523.3, 659.3, 784.0, 987.8] }, // C
+      { bass: 98.0,  mel: [493.9, 587.3, 784.0, 587.3, 493.9, 587.3, 784.0, 987.8] }, // G
+      { bass: 110.0, mel: [523.3, 659.3, 880.0, 659.3, 523.3, 659.3, 880.0, 1046.5] }, // Am
+      { bass: 87.3,  mel: [523.3, 698.5, 880.0, 698.5, 523.3, 698.5, 880.0, 1046.5] }, // F
+    ];
+
+    function playMelNote(freq, time, dur) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'square';
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0, time);
+      g.gain.linearRampToValueAtTime(0.09, time + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, time + dur * 0.9);
+      o.connect(g); g.connect(bgmGain);
+      o.start(time); o.stop(time + dur);
+    }
+    function playBassNote(freq, time, dur) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'triangle';
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0, time);
+      g.gain.linearRampToValueAtTime(0.25, time + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, time + dur * 0.95);
+      o.connect(g); g.connect(bgmGain);
+      o.start(time); o.stop(time + dur);
+    }
+
+    function scheduleBar(barIdx, startTime) {
+      const { bass, mel } = prog[barIdx];
+      // Bass: root on beat 1 and 5 (quarter-note pulse)
+      playBassNote(bass, startTime,             NOTE * 2);
+      playBassNote(bass, startTime + NOTE * 4,  NOTE * 2);
+      // Melody: 8 eighth notes
+      mel.forEach((f, i) => playMelNote(f, startTime + i * NOTE, NOTE));
+    }
+
+    let barIdx = 0;
+    let nextBarAt = ctx.currentTime + 0.1;
+    function tick() {
+      // Schedule ahead by up to 2 bars
+      while (nextBarAt < ctx.currentTime + BAR * 1.2) {
+        scheduleBar(barIdx % prog.length, nextBarAt);
+        nextBarAt += BAR;
+        barIdx++;
+      }
+      setTimeout(tick, 200);
+    }
+    tick();
+  }
+
+  function toggle() {
+    if (!ctx) return false;
+    muted = !muted;
+    master.gain.setTargetAtTime(muted ? 0 : 1, ctx.currentTime, 0.1);
+    return muted;
+  }
+
+  function startDraw() {
+    if (!ctx || drawSrc) return;
+    const buf  = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    drawSrc = ctx.createBufferSource();
+    drawSrc.buffer = buf; drawSrc.loop = true;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 3500; bp.Q.value = 2.5;
+    drawGain = ctx.createGain();
+    drawGain.gain.setValueAtTime(0, ctx.currentTime);
+    drawGain.gain.linearRampToValueAtTime(0.022, ctx.currentTime + 0.06);
+    drawSrc.connect(bp); bp.connect(drawGain); drawGain.connect(master);
+    drawSrc.start();
+  }
+
+  function stopDraw() {
+    if (!ctx || !drawSrc) return;
+    const src = drawSrc; drawSrc = null;
+    drawGain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
+    setTimeout(() => { try { src.stop(); src.disconnect(); } catch(e){} }, 300);
+  }
+
+  function playTick(urgent = false) {
+    if (!ctx) return;
+    const osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.connect(g); g.connect(master);
+    osc.type = 'sine'; osc.frequency.value = urgent ? 900 : 660;
+    const t = ctx.currentTime;
+    g.gain.setValueAtTime(urgent ? 0.3 : 0.13, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + (urgent ? 0.07 : 0.12));
+    osc.start(t); osc.stop(t + 0.15);
+  }
+
+  function playScore(pct) {
+    if (!ctx) return;
+    const notes = pct >= 80 ? [523, 659, 784, 1047]
+                : pct >= 50 ? [523, 659, 784]
+                :             [440, 392];
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.connect(g); g.connect(master);
+      osc.type = 'sine'; osc.frequency.value = freq;
+      const t = ctx.currentTime + i * 0.11;
+      g.gain.setValueAtTime(0.17, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+      osc.start(t); osc.stop(t + 0.5);
+    });
+  }
+
+  function playTransition() {
+    if (!ctx) return;
+    const osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.connect(g); g.connect(master);
+    osc.type = 'sine';
+    const t = ctx.currentTime;
+    osc.frequency.setValueAtTime(700, t);
+    osc.frequency.exponentialRampToValueAtTime(220, t + 0.28);
+    g.gain.setValueAtTime(0.12, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    osc.start(t); osc.stop(t + 0.3);
+  }
+
+  function playFanfare(avg) {
+    if (!ctx) return;
+    const melody = avg >= 70
+      ? [523, 0, 659, 0, 784, 0, 1047, 0, 1047]
+      : [392, 370, 330, 0, 294];
+    let t = ctx.currentTime + 0.05;
+    melody.forEach(freq => {
+      if (freq > 0) {
+        const osc = ctx.createOscillator(), g = ctx.createGain();
+        osc.connect(g); g.connect(master);
+        osc.type = 'triangle'; osc.frequency.value = freq;
+        g.gain.setValueAtTime(0.2, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+        osc.start(t); osc.stop(t + 0.4);
+      }
+      t += 0.13;
+    });
+  }
+
+  return { init, toggle, startDraw, stopDraw, playTick, playScore, playTransition, playFanfare,
+           isMuted: () => muted };
+})();
+
 // ── Canvas setup ────────────────────────────────────────────────────────────
 const canvas = document.getElementById('canvas');
 const ctx    = canvas.getContext('2d');
@@ -394,7 +584,7 @@ const el = {
   modeButtons:    document.getElementById('mode-buttons'),
   btnFree:        document.getElementById('btn-free'),
   btnChallenge:   document.getElementById('btn-challenge'),
-  retryBtn:       document.getElementById('retry-btn'),
+  freeResultBtns: document.getElementById('free-result-btns'),
   resultsScreen:  document.getElementById('results-screen'),
   resultsList:    document.getElementById('results-list'),
   resultsTotalPct:document.getElementById('results-total-pct'),
@@ -451,19 +641,20 @@ function shuffle(arr) {
 
 // ── Free mode ────────────────────────────────────────────────────────────────
 function enterFreeMode() {
-  clearInterval(cTimer);
+  clearTimeout(cTimer);
   mode       = 'free';
+  cPhase     = 'idle';
   currentKey = 'circle';
   isDrawing  = false;
   points     = [];
   hasResult  = false;
 
-  el.title.style.display        = '';
-  el.challengeHdr.style.display = 'none';
-  el.timerWrap.style.display    = 'none';
-  el.instruction.style.display  = '';
-  el.modeButtons.style.display  = '';
-  el.retryBtn.style.display     = 'none';
+  el.title.style.display             = '';
+  el.challengeHdr.style.display      = 'none';
+  el.timerWrap.style.display         = 'none';
+  el.instruction.style.display       = '';
+  el.modeButtons.style.display       = '';
+  el.freeResultBtns.style.display    = 'none';
   el.btnFree.classList.add('active');
   el.btnChallenge.classList.remove('active');
   hideScore();
@@ -475,14 +666,15 @@ function endFreeMode() {
   hasResult = true;
   redraw(0.22);
   showScore(pct, getMessage(pct));
-  el.instruction.style.display = 'none';
-  el.modeButtons.style.display = 'none';
-  el.retryBtn.style.display    = '';
+  audio.playScore(pct);
+  el.instruction.style.display    = 'none';
+  el.modeButtons.style.display    = 'none';
+  el.freeResultBtns.style.display = 'flex';
 }
 
 // ── Challenge mode ───────────────────────────────────────────────────────────
 function enterChallengeMode() {
-  clearInterval(cTimer);
+  clearTimeout(cTimer);
   mode    = 'challenge';
   cQueue  = shuffle(SHAPE_KEYS).slice(0, 3);
   cIndex  = 0;
@@ -493,7 +685,7 @@ function enterChallengeMode() {
   el.timerWrap.style.display    = 'flex';
   el.instruction.style.display  = 'none';
   el.modeButtons.style.display  = 'none';
-  el.retryBtn.style.display     = 'none';
+  el.freeResultBtns.style.display = 'none';
   el.btnFree.classList.remove('active');
   el.btnChallenge.classList.add('active');
 
@@ -501,7 +693,7 @@ function enterChallengeMode() {
 }
 
 function startTurn() {
-  clearInterval(cTimer);
+  clearTimeout(cTimer);
   isDrawing  = false;
   points     = [];
   hasResult  = false;
@@ -519,7 +711,7 @@ function startTurn() {
 function startTimer() {
   const start = Date.now();
 
-  // Animate bar with rAF for smooth color transitions
+  let lastSec = -1;
   function tick() {
     const elapsed  = Date.now() - start;
     const fraction = Math.max(0, 1 - elapsed / CHALLENGE_TIME);
@@ -529,6 +721,10 @@ function startTimer() {
     if (fraction > 0.5)       { el.timerBar.style.background = '#555'; el.timerCount.style.color = '#555'; }
     else if (fraction > 0.25) { el.timerBar.style.background = '#9a6622'; el.timerCount.style.color = '#9a6622'; }
     else                      { el.timerBar.style.background = '#994433'; el.timerCount.style.color = '#994433'; }
+    if (secs !== lastSec && secs > 0 && secs < 5) {
+      audio.playTick(secs <= 2);
+      lastSec = secs;
+    }
     if (fraction > 0) requestAnimationFrame(tick);
   }
   el.timerBar.style.width      = '100%';
@@ -553,10 +749,11 @@ function endTurn() {
 
   redraw(0.22);
   showScore(pct, getMessage(pct));
+  audio.playScore(pct);
 
   setTimeout(() => {
     cIndex++;
-    if (cIndex < 3) startTurn();
+    if (cIndex < 3) { audio.playTransition(); startTurn(); }
     else            showResults();
   }, 1500);
 }
@@ -573,6 +770,7 @@ function showResults() {
   el.resultsTotalPct.textContent = avg + '%';
   el.resultsTotalPct.style.color = scoreColor(avg);
   el.resultsScreen.style.display = 'flex';
+  audio.playFanfare(avg);
 }
 
 // ── Input handling ───────────────────────────────────────────────────────────
@@ -586,6 +784,8 @@ function onStart(e) {
   if (hasResult && mode === 'free') return;
   if (cPhase === 'transitioning') return;
   e.preventDefault();
+  audio.init();
+  audio.startDraw();
   isDrawing = true;
   points    = [getPos(e)];
   redraw();
@@ -602,6 +802,7 @@ function onEnd(e) {
   if (!isDrawing) return;
   e.preventDefault();
   isDrawing = false;
+  audio.stopDraw();
   if (mode === 'free') {
     if (points.length > 10) endFreeMode();
   } else if (mode === 'challenge' && cPhase === 'drawing') {
@@ -624,14 +825,18 @@ el.btnFree.addEventListener('click', () => {
 el.btnChallenge.addEventListener('click', () => {
   enterChallengeMode();
 });
-el.retryBtn.addEventListener('click', () => {
+document.getElementById('free-retry-btn').addEventListener('click', () => {
   hasResult = false;
   points    = [];
-  el.retryBtn.style.display    = 'none';
-  el.instruction.style.display = '';
-  el.modeButtons.style.display = '';
+  el.freeResultBtns.style.display = 'none';
+  el.instruction.style.display    = '';
+  el.modeButtons.style.display    = '';
   hideScore();
   redraw();
+});
+document.getElementById('free-challenge-btn').addEventListener('click', () => {
+  el.freeResultBtns.style.display = 'none';
+  enterChallengeMode();
 });
 el.resultsRetry.addEventListener('click', () => {
   el.resultsScreen.style.display = 'none';
@@ -640,6 +845,13 @@ el.resultsRetry.addEventListener('click', () => {
 document.getElementById('results-home').addEventListener('click', () => {
   el.resultsScreen.style.display = 'none';
   enterFreeMode();
+});
+
+// ── Mute button ───────────────────────────────────────────────────────────────
+document.getElementById('mute-btn').addEventListener('click', () => {
+  audio.init();
+  const muted = audio.toggle();
+  document.getElementById('mute-btn').textContent = muted ? '🔇' : '🔊';
 });
 
 // ── Init ─────────────────────────────────────────────────────────────────────
